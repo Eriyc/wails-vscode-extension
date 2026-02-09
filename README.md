@@ -61,6 +61,18 @@ Works with JavaScript, TypeScript, JSX, TSX, Vue, and Svelte files.
 - Visual Studio Code 1.109.0+
 - A [Wails3](https://v3alpha.wails.io/) project with generated TypeScript/JavaScript bindings
 
+## Development
+
+### Releasing
+
+When a pull request is merged to `main`, GitHub Actions will automatically:
+1. Bump the patch version in `package.json`
+2. Commit and push the version bump (with `[skip ci]` to avoid workflow loops)
+3. Create a version tag
+4. Publish to the VS Code Marketplace
+
+No manual intervention needed!
+
 ## License
 
 The Unlicense— see [LICENSE](LICENSE)
