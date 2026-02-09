@@ -2,6 +2,8 @@
 
 Navigate from auto-generated Wails3 JavaScript/TypeScript bindings straight to your Go source code.
 
+![Example](example.png)
+
 ## Features
 
 ### Go to Definition
