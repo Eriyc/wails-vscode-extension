@@ -1,144 +1,64 @@
-# Wails3 VSCode Extension
+# Wails3 Bindings — Go to Go Source
 
-A Visual Studio Code extension that enhances the development experience for Wails3 applications by providing intelligent "Go to Definition" functionality for Wails bindings.
+Navigate from auto-generated Wails3 JavaScript/TypeScript bindings straight to your Go source code.
 
 ## Features
 
-- **Smart Definition Navigation**: When you Ctrl+Click (or Cmd+Click on Mac) on a Wails binding in your JavaScript/TypeScript code, the extension will take you directly to the Go source code instead of the auto-generated JS glue file.
-- **Multiple Pattern Support**: Works with various import and usage patterns:
-  - ES6 imports: `import { Function } from './bindings/package'`
-  - CommonJS requires: `const { Function } = require('./bindings/package')`
-  - Direct usage: `bindings.package.Function()`
+### Go to Definition
 
-## Installation
+Ctrl+Click (Cmd+Click on Mac) any Wails binding symbol in JS/TS and jump directly to the Go function or method — skipping the auto-generated glue file entirely.
 
-### From Source
+### CodeLens
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/Eriyc/wails-vscode-extension.git
-   cd wails-vscode-extension
-   ```
+Inline **"Go to Go"** links appear above every call-site that uses a bindings import and above each `export function` in the generated glue files.
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+### Hover
 
-3. Build the extension:
-   ```bash
-   npm run build
-   ```
+Hover over an exported function in a bindings file to see a quick link to the Go definition.
 
-4. Package the extension (optional):
-   ```bash
-   npm run package
-   ```
+### Auto-Detection
 
-5. Install in VSCode:
-   - Press `F5` to open a new VSCode window with the extension loaded (for development)
-   - Or install the `.vsix` file via "Extensions: Install from VSIX..." command
+The bindings directory is automatically detected from your project's `Taskfile.yml` (`-d` flag on `wails3 generate bindings`). No configuration needed for standard Wails3 projects.
 
-## Usage
+## Supported Patterns
 
-1. Open a Wails3 project in VSCode
-2. Navigate to any JavaScript or TypeScript file that uses Wails bindings
-3. Ctrl+Click (or Cmd+Click) on any function imported from or used via the bindings
-4. The extension will automatically find and open the corresponding Go source file
+```js
+// Namespace import
+import * as GreetService from "../bindings/changeme";
+GreetService.Greet(name);
 
-### Example
+// Named import
+import { Greet } from "../bindings/changeme/greetservice";
+Greet(name);
 
-Given a JavaScript file with:
-```javascript
-import { GetUsers } from './bindings/userservice';
-
-// Later in code...
-const users = await GetUsers();
+// Default import
+import GreetService from "../bindings/changeme";
 ```
 
-Ctrl+Clicking on `GetUsers` will navigate to the Go source file where the function is defined:
-```go
-func (s *UserService) GetUsers() []User {
-    // Implementation...
-}
-```
+Works with JavaScript, TypeScript, JSX, TSX, Vue, and Svelte files.
 
 ## Configuration
 
-The extension can be configured through VSCode settings:
+| Setting              | Default      | Description                                                                                    |
+| -------------------- | ------------ | ---------------------------------------------------------------------------------------------- |
+| `wails.bindingsPath` | `"bindings"` | Name or relative path of the bindings directory. Auto-detected from Taskfile.yml when not set. |
 
-- **`wails.bindingsPath`**: Path to the Wails3 bindings directory relative to workspace root (default: `"bindings"`)
-
-### Example Configuration
-
-Add to your `.vscode/settings.json`:
-```json
-{
-  "wails.bindingsPath": "frontend/bindings"
-}
-```
+| Keybinding | Command              |
+| ---------- | -------------------- |
+| `Ctrl+F12` | Wails: Go to Backend |
 
 ## How It Works
 
-1. The extension registers a `DefinitionProvider` for JavaScript and TypeScript files
-2. When you trigger "Go to Definition" on a binding reference, it:
-   - Detects the pattern (import, require, or direct usage)
-   - Extracts the package and function names
-   - Searches common Go project locations for the source file
-   - Finds the function definition in the Go file
-   - Returns the location to VSCode
-
-## Supported Project Structures
-
-The extension automatically searches for Go files in these common locations:
-- `<workspace>/<package>/`
-- `<workspace>/internal/<package>/`
-- `<workspace>/pkg/<package>/`
-- `<workspace>/app/<package>/`
-- `<workspace>/services/<package>/`
-
-## Development
-
-### Building
-
-```bash
-npm run build
-```
-
-### Watching
-
-```bash
-npm run watch
-```
-
-### Debugging
-
-1. Open the project in VSCode
-2. Press `F5` to start debugging
-3. A new VSCode window will open with the extension loaded
-4. Set breakpoints in the TypeScript source code
+1. Registers a DefinitionProvider, CodeLensProvider, and HoverProvider for JS/TS files
+2. Detects bindings imports by matching the configured (or auto-detected) bindings directory name in import specifiers
+3. On "Go to Definition", resolves the target through VS Code's built-in providers — if it lands in a bindings file, redirects to the matching Go source
+4. Searches Go files by matching the bindings filename stem (e.g. `greetservice.js` → `greetservice.go`), then falls back to a workspace-wide symbol search
 
 ## Requirements
 
-- Visual Studio Code 1.85.0 or higher
-- A Wails3 project with Go backend
+- Visual Studio Code 1.109.0+
+- A [Wails3](https://v3alpha.wails.io/) project with generated TypeScript/JavaScript bindings
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Roadmap
-
-- [ ] Support for more complex binding patterns
-- [ ] Cache Go file locations for better performance
-- [ ] Support for viewing both JS and Go definitions
-- [ ] Hover documentation from Go comments
-- [ ] Auto-completion for binding functions
-
-## Issues
-
-If you encounter any issues or have suggestions, please file them in the [issue tracker](https://github.com/Eriyc/wails-vscode-extension/issues).
+The Unlicense— see [LICENSE](LICENSE)

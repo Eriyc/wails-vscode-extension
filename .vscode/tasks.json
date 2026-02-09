@@ -3,22 +3,23 @@
   "tasks": [
     {
       "type": "npm",
-      "script": "build",
+      "script": "watch",
+      "problemMatcher": "$esbuild-watch",
+      "isBackground": true,
+      "presentation": {
+        "reveal": "never"
+      },
       "group": {
         "kind": "build",
         "isDefault": true
       },
-      "problemMatcher": [],
-      "label": "npm: build",
-      "detail": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node16"
+      "label": "npm: watch"
     },
     {
       "type": "npm",
-      "script": "watch",
+      "script": "build",
       "problemMatcher": [],
-      "isBackground": true,
-      "label": "npm: watch",
-      "detail": "npm run build -- --watch"
+      "label": "npm: build"
     }
   ]
 }

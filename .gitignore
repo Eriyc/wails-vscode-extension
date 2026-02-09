@@ -16,3 +16,4 @@ out/
 
 # Go
 root/
+.vscode-test/

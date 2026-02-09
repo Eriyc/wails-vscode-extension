@@ -1,21 +1,17 @@
 # Changelog
 
-All notable changes to the "Wails3 Bindings Definition Provider" extension will be documented in this file.
+All notable changes to the "Wails3 Bindings — Go to Go Source" extension will be documented in this file.
 
 ## [0.1.0] - 2026-02-09
 
 ### Added
-- Initial release
-- Implemented `vscode.DefinitionProvider` for Wails3 bindings
-- Support for ES6 import statements (`import { Function } from './bindings/package'`)
-- Support for CommonJS require statements (`const { Function } = require('./bindings/package')`)
-- Support for direct binding usage (`bindings.package.Function()`)
-- Automatic Go source file discovery in common project structures
-- Configuration option for custom bindings path
-- Comprehensive documentation and README
 
-### Features
-- Navigate from JS/TS glue files to Go source definitions
-- Works with multiple Go project structures (standard, internal, pkg, app, services)
-- Supports function detection in Go files with various patterns
-- Language support for JavaScript, TypeScript, JSX, and TSX files
+- **DefinitionProvider**: Ctrl+Click any Wails binding symbol in JS/TS to jump directly to the Go source, bypassing auto-generated glue files
+- **CodeLensProvider**: Inline "Go to Go" links above call-sites of bindings imports and above `export function` declarations in glue files
+- **HoverProvider**: Hover over exported functions in bindings files to see a quick link to the Go definition
+- **Taskfile.yml auto-detection**: Bindings directory is automatically detected from the `-d`/`-dir` flag in `wails3 generate bindings` or from `generates:` entries, with no configuration needed for standard projects
+- **FileSystemWatcher**: Taskfile changes automatically invalidate the cached bindings directory
+- Configurable `wails.bindingsPath` setting with smart defaults
+- `Ctrl+F12` keybinding for "Wails: Go to Backend" command
+- Language support for JavaScript, TypeScript, JSX, TSX, Vue, and Svelte
+- TypeScript example project (`examples/ts/`) demonstrating extension features with a Wails3 app
