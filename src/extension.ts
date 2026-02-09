@@ -8,7 +8,7 @@ import { findGoDefinition, invalidateTaskfileCache } from "./providers/wailsBind
  * Called when the extension is activated
  */
 export function activate(context: vscode.ExtensionContext) {
-  console.log("Wails3 Bindings Definition Provider is now active");
+  
 
   const selector: vscode.DocumentSelector = [
     { scheme: "file", language: "javascript" },
@@ -85,5 +85,5 @@ export function activate(context: vscode.ExtensionContext) {
  * Called when the extension is deactivated
  */
 export function deactivate() {
-  console.log("Wails3 Bindings Definition Provider is now deactivated");
+  
 }
