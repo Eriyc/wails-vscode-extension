@@ -24,15 +24,24 @@ const taskfileBindingsCache = new Map<string, string | null>();
 function detectBindingsDirFromTaskfile(workspacePath: string): string | null {
   for (const name of ["Taskfile.yml", "Taskfile.yaml"]) {
     const taskfilePath = path.join(workspacePath, name);
-    if (!fs.existsSync(taskfilePath)) {
-      // Also check inside a build/ subdirectory (common wails layout)
-      const buildPath = path.join(workspacePath, "build", name);
-      if (!fs.existsSync(buildPath)) {
-        continue;
+    if (fs.existsSync(taskfilePath)) {
+      const result = parseTaskfileForBindingsDir(taskfilePath);
+      // If we found something in the root Taskfile, return it
+      if (result) {
+        return result;
       }
-      return parseTaskfileForBindingsDir(buildPath);
+      // If root Taskfile exists but didn't have the bindings command, 
+      // continue to check build/ subdirectory
     }
-    return parseTaskfileForBindingsDir(taskfilePath);
+
+    // Check inside a build/ subdirectory (common wails layout)
+    const buildPath = path.join(workspacePath, "build", name);
+    if (fs.existsSync(buildPath)) {
+      const result = parseTaskfileForBindingsDir(buildPath);
+      if (result) {
+        return result;
+      }
+    }
   }
   return null;
 }
@@ -51,7 +60,8 @@ function parseTaskfileForBindingsDir(taskfilePath: string): string | null {
     let inCmds = false;
     let inGenerates = false;
 
-    for (const rawLine of lines) {
+    for (let lineNum = 0; lineNum < lines.length; lineNum++) {
+      const rawLine = lines[lineNum];
       const trimmed = rawLine.trim();
 
       // Detect the generate:bindings task block
@@ -117,15 +127,12 @@ function parseTaskfileForBindingsDir(taskfilePath: string): string | null {
         // Strip glob suffixes: frontend/bindings/**/* → frontend/bindings
         const cleaned = entry.replace(/\/?\*\*\/?\*?$/, "").replace(/\/\*$/, "");
         if (cleaned && cleaned.includes("/")) {
-          // Return the last directory segment name
-          const lastSeg = path.basename(cleaned);
-          if (lastSeg) {
-            return lastSeg;
-          }
+          // Return the full path, not just the last segment
+          return cleaned;
         }
       }
     }
-  } catch {
+  } catch (error) {
     // Couldn't read/parse Taskfile — fall through
   }
   return null;
@@ -155,6 +162,55 @@ export function isInsideBindingsDir(
   // Simple segment name
   const segments = relative.split("/");
   return segments.includes(bindingsDir);
+}
+
+/**
+ * Get the full relative path to the bindings directory from the workspace root.
+ * For example, returns "frontend/src/lib/bindings" instead of just "bindings".
+ * 
+ * Resolution order:
+ *   1. The explicit `wails.bindingsPath` VS Code setting (if changed from default).
+ *   2. Auto-detected from `Taskfile.yml` (`-d` flag on `wails3 generate bindings`).
+ *   3. Falls back to `"bindings"`.
+ */
+export function getFullBindingsPath(workspaceFolder?: vscode.WorkspaceFolder): string {
+  const config = vscode.workspace.getConfiguration("wails");
+  const configured = config.get<string>("bindingsPath", "bindings");
+
+  // If the user explicitly set a non-default value, honour it
+  const inspected = config.inspect<string>("bindingsPath");
+  const isExplicitlySet =
+    inspected?.workspaceValue !== undefined ||
+    inspected?.workspaceFolderValue !== undefined ||
+    inspected?.globalValue !== undefined;
+
+  if (isExplicitlySet) {
+    return configured;
+  }
+
+  // Try auto-detect from Taskfile
+  const wsPath = workspaceFolder?.uri.fsPath ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (wsPath) {
+    if (taskfileBindingsCache.has(wsPath)) {
+      const cached = taskfileBindingsCache.get(wsPath);
+      if (cached) {
+        return cached;
+      }
+      // Cache had null, which means a previous detection failed. 
+      // Don't return here, let it fall through to try again.
+    }
+    
+    // Either no cache entry, or cache had null - try detection
+    const detected = detectBindingsDirFromTaskfile(wsPath);
+    if (detected) {
+      // Only cache successful detections
+      taskfileBindingsCache.set(wsPath, detected);
+      return detected;
+    }
+    // Don't cache null results - leave cache entry missing so we retry next time
+  }
+
+  return configured;
 }
 
 /**
@@ -217,12 +273,50 @@ export function invalidateTaskfileCache(workspacePath?: string): void {
 // ---------------------------------------------------------------------------
 
 /**
+ * When an index file is encountered, try to find the actual file that contains
+ * the symbol by searching sibling files in the same directory.
+ */
+function resolveReExportFromIndex(indexUri: vscode.Uri, symbolName: string): vscode.Uri | null {
+  try {
+    const indexDir = path.dirname(indexUri.fsPath);
+    const files = fs.readdirSync(indexDir);
+    
+    // Look for JS/TS files in the same directory (excluding index itself)
+    for (const file of files) {
+      if (file === 'index.js' || file === 'index.ts' || file === 'index.d.ts') {
+        continue;
+      }
+      
+      if (/\.(js|ts)$/.test(file) && !file.endsWith('.d.ts')) {
+        const filePath = path.join(indexDir, file);
+        const content = fs.readFileSync(filePath, 'utf-8');
+        
+        // Check if this file exports the symbol we're looking for
+        const exportRegex = new RegExp(`export\\s+function\\s+${symbolName}\\s*\\(`);
+        if (exportRegex.test(content)) {
+          
+          return vscode.Uri.file(filePath);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[Wails] Error resolving re-export:', error);
+  }
+  
+  return null;
+}
+
+/**
  * Given a bindings file URI and a symbol name, find the matching Go source.
  *
- * Lookup order:
- *   1. Go files whose stem matches the bindings filename
- *      (e.g. greetservice.js -> greetservice.go).
- *   2. All .go files in the workspace (broad fallback).
+ * Strategy: construct the Go source path directly from the bindings path structure.
+ * The bindings directory mirrors the Go package structure, so we can derive the
+ * source location without expensive workspace searches.
+ *
+ * Example:
+ *   - Bindings: frontend/bindings/changeme/greetservice.js
+ *   - Go module: changeme (from go.mod)
+ *   - Source: greetservice.go (at project root)
  */
 export async function findGoDefinition(
   workspaceFolder: vscode.WorkspaceFolder,
@@ -230,39 +324,57 @@ export async function findGoDefinition(
   symbolName: string,
 ): Promise<vscode.Location | undefined> {
   const stem = path.basename(bindingUri.fsPath).replace(/(\.(d\.ts|js|ts))$/, "");
+  
+  // If this is an index file, try to resolve the re-export
+  if (stem === 'index') {
+    const actualBindingUri = resolveReExportFromIndex(bindingUri, symbolName);
+    if (actualBindingUri) {
+      // Recursively call with the actual file
+      return findGoDefinition(workspaceFolder, actualBindingUri, symbolName);
+    }
+    return undefined;
+  }
+  
   const goFileName = `${stem}.go`;
-  const bindingsDir = getBindingsDir(workspaceFolder);
 
-  // 1. Exact filename match
-  const candidates = await vscode.workspace.findFiles(
-    new vscode.RelativePattern(workspaceFolder, `**/${goFileName}`),
-    "**/node_modules/**",
-  );
+  // Extract package path from bindings directory structure
+  let goFilePath = constructGoFilePath(workspaceFolder.uri.fsPath, bindingUri.fsPath, goFileName);
 
-  const goFiles = candidates.filter(
-    (uri) => !isInsideBindingsDir(uri.fsPath, workspaceFolder.uri.fsPath, bindingsDir),
-  );
-
-  for (const goFileUri of goFiles) {
+  if (goFilePath && fs.existsSync(goFilePath)) {
+    const goFileUri = vscode.Uri.file(goFilePath);
     const loc = searchGoFileForSymbol(goFileUri, symbolName);
     if (loc) {
       return loc;
     }
+  } else {
+    // Fallback: try using the parent directory name as the filename
+    // E.g., if binding is "session/manager.ts", try "session.go" instead of "manager.go"
+    const bindingDir = path.dirname(bindingUri.fsPath);
+    const parentDirName = path.basename(bindingDir);
+    
+    if (parentDirName !== stem) {
+      const fallbackGoFileName = `${parentDirName}.go`;
+      goFilePath = constructGoFilePath(workspaceFolder.uri.fsPath, bindingUri.fsPath, fallbackGoFileName);
+      
+      if (goFilePath && fs.existsSync(goFilePath)) {
+        const goFileUri = vscode.Uri.file(goFilePath);
+        const loc = searchGoFileForSymbol(goFileUri, symbolName);
+        if (loc) {
+          return loc;
+        }
+      }
+    }
   }
 
-  // 2. Broad fallback: search all Go files
-  const allGoFiles = await vscode.workspace.findFiles(
-    new vscode.RelativePattern(workspaceFolder, "**/*.go"),
-    "**/node_modules/**",
+  // Final fallback: if direct path construction fails, do a limited search
+  // Search only in common Go source directories, excluding common false-positive locations
+  const bindingsDir = getBindingsDir(workspaceFolder);
+  const candidates = await vscode.workspace.findFiles(
+    new vscode.RelativePattern(workspaceFolder, `**/${goFileName}`),
+    `{**/node_modules/**,**/.direnv/**,**/vendor/**,**/${bindingsDir}/**}`,
   );
 
-  const filteredGoFiles = allGoFiles.filter(
-    (uri) =>
-      !isInsideBindingsDir(uri.fsPath, workspaceFolder.uri.fsPath, bindingsDir) &&
-      !goFiles.some((g) => g.fsPath === uri.fsPath),
-  );
-
-  for (const goFileUri of filteredGoFiles) {
+  for (const goFileUri of candidates) {
     const loc = searchGoFileForSymbol(goFileUri, symbolName);
     if (loc) {
       return loc;
@@ -270,6 +382,160 @@ export async function findGoDefinition(
   }
 
   return undefined;
+}
+
+/**
+ * Construct the Go source file path from the bindings file path.
+ *
+ * The bindings directory structure mirrors Go packages:
+ *   - bindings/changeme/service.js -> service.go (in project root)
+ *   - bindings/changeme/pkg/service.js -> pkg/service.go (in subdirectory)
+ *   - bindings/github.com/user/pkg/service.js -> external package (skip)
+ */
+function constructGoFilePath(
+  workspacePath: string,
+  bindingsFilePath: string,
+  goFileName: string,
+): string | null {
+  try {
+    // Find go.mod by traversing up from the bindings file
+    const goModPath = findGoModFileFromPath(bindingsFilePath, workspacePath);
+    if (!goModPath) {
+      return null;
+    }
+
+    const projectRoot = path.dirname(goModPath);
+    const moduleName = parseModuleName(goModPath);
+    if (!moduleName) {
+      return null;
+    }
+
+    // Extract the package path from the bindings file path
+    const bindingsDir = getBindingsDir();
+    const relativePath = path.relative(projectRoot, bindingsFilePath);
+    const segments = relativePath.split(path.sep);
+
+    // Find the bindings directory in the path
+    // bindingsDir might be a full path like "frontend/src/lib/bindings"
+    // so we need to find where those segments match in sequence
+    const bindingsSegments = bindingsDir.split('/');
+    let bindingsIndex = -1;
+    
+    for (let i = 0; i <= segments.length - bindingsSegments.length; i++) {
+      let match = true;
+      for (let j = 0; j < bindingsSegments.length; j++) {
+        if (segments[i + j] !== bindingsSegments[j]) {
+          match = false;
+          break;
+        }
+      }
+      if (match) {
+        bindingsIndex = i;
+        break;
+      }
+    }
+    
+    if (bindingsIndex === -1) {
+      return null;
+    }
+
+    // Get package path after bindings directory (e.g., "changeme/pkg" or "changeme")
+    const packageSegments = segments.slice(bindingsIndex + bindingsSegments.length, -1); // Exclude filename
+
+    if (packageSegments.length === 0) {
+      return null;
+    }
+
+    // Check if this is the main module or a subpackage
+    const firstSegment = packageSegments[0];
+
+    // Skip truly external packages (e.g., "github.com" when module is "changeme")
+    // But if the module itself starts with "github.com", we should match the full path
+    const moduleSegments = moduleName.split('/');
+    
+    // Check if packageSegments starts with the module path
+    let isOwnModule = false;
+    if (packageSegments.length >= moduleSegments.length) {
+      let match = true;
+      for (let i = 0; i < moduleSegments.length; i++) {
+        if (packageSegments[i] !== moduleSegments[i]) {
+          match = false;
+          break;
+        }
+      }
+      if (match) {
+        isOwnModule = true;
+      }
+    }
+    
+    if (!isOwnModule && firstSegment.includes(".")) {
+      return null;
+    }
+
+    if (isOwnModule) {
+      // Extract path after module name
+      const subPath = packageSegments.slice(moduleSegments.length);
+      if (subPath.length === 0) {
+        return null;
+      }
+      const result = path.join(projectRoot, ...subPath, goFileName);
+      return result;
+    }
+
+    // If first segment matches module name, construct path relative to project root
+    const moduleBaseName = path.basename(moduleName);
+    if (firstSegment === moduleBaseName || firstSegment === moduleName) {
+      // Remove the module name segment and build the path
+      const subPath = packageSegments.slice(1);
+      const result = path.join(projectRoot, ...subPath, goFileName);
+      return result;
+    }
+
+    // Otherwise, it might be a subdirectory under the project
+    const result = path.join(projectRoot, ...packageSegments, goFileName);
+    return result;
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
+ * Find the go.mod file by traversing up from a starting path.
+ * Stops at the workspace boundary to avoid going outside the project.
+ */
+function findGoModFileFromPath(startPath: string, workspacePath: string): string | null {
+  let currentDir = path.dirname(startPath);
+  const workspaceNormalized = path.resolve(workspacePath);
+
+  // Traverse up the directory tree
+  while (currentDir.startsWith(workspaceNormalized)) {
+    const goModPath = path.join(currentDir, "go.mod");
+    if (fs.existsSync(goModPath)) {
+      return goModPath;
+    }
+
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) {
+      // Reached filesystem root
+      break;
+    }
+    currentDir = parentDir;
+  }
+
+  return null;
+}
+
+/**
+ * Parse the module name from go.mod file.
+ */
+function parseModuleName(goModPath: string): string | null {
+  try {
+    const content = fs.readFileSync(goModPath, "utf-8");
+    const match = content.match(/^module\s+(.+)$/m);
+    return match ? match[1].trim() : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -300,7 +566,7 @@ export function searchGoFileForSymbol(
         return new vscode.Location(goFileUri, pos);
       }
     }
-  } catch {
+  } catch (error) {
     // file read error -- skip
   }
 

@@ -1,11 +1,46 @@
 import * as vscode from "vscode";
 import * as path from "path";
+import * as fs from "fs";
 import {
   isInsideBindingsDir,
   getBindingsDir,
+  getFullBindingsPath,
   isWailsBindingsFile,
   invalidateTaskfileCache,
 } from "./wailsBindingsUtils";
+
+/**
+ * Resolve TypeScript/SvelteKit path aliases like $lib to their actual paths.
+ * Reads tsconfig.json or svelte.config.js to find path mappings.
+ */
+function resolvePathAlias(workspacePath: string, alias: string): string | null {
+  // Try tsconfig.json first (works for both TS and SvelteKit)
+  try {
+    const tsconfigPath = path.join(workspacePath, "tsconfig.json");
+    if (fs.existsSync(tsconfigPath)) {
+      const tsconfig = JSON.parse(fs.readFileSync(tsconfigPath, "utf-8"));
+      const pathMappings = tsconfig.compilerOptions?.paths;
+      
+      if (pathMappings) {
+        // Look for mapping like "$lib/*" -> "src/lib/*"
+        const aliasPattern = `${alias}/*`;
+        if (pathMappings[aliasPattern]) {
+          const mappedPath = pathMappings[aliasPattern][0].replace("/*", "");
+          return mappedPath;
+        }
+      }
+    }
+  } catch (error) {
+    
+  }
+  
+  // Common SvelteKit defaults
+  if (alias === "$lib") {
+    return "src/lib";
+  }
+  
+  return null;
+}
 
 /**
  * Import info extracted from a single import statement that references
@@ -37,23 +72,33 @@ export class WailsCodeLensProvider implements vscode.CodeLensProvider {
     document: vscode.TextDocument,
     _token: vscode.CancellationToken,
   ): vscode.CodeLens[] {
+    
     const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
     if (!workspaceFolder) {
+      
       return [];
     }
 
     const bindingsDir = getBindingsDir(workspaceFolder);
+    
+    
+    // Extract just the directory name (last segment) for specifier checks
+    // e.g., "frontend/src/lib/bindings" -> "bindings"
+    const bindingsDirName = bindingsDir.split('/').pop() || 'bindings';
+    
 
     // --- Glue file: show lens on each exported function ---
     if (
       isWailsBindingsFile(document) &&
       isInsideBindingsDir(document.uri.fsPath, workspaceFolder.uri.fsPath, bindingsDir)
     ) {
+      
       return this.lensesForBindingsFile(document);
     }
 
     // --- User code: show lens on call-sites of bindings imports ---
-    return this.lensesForUserCode(document, bindingsDir);
+    
+    return this.lensesForUserCode(document, bindingsDirName);
   }
 
   // ---------------------------------------------------------------------------
@@ -61,12 +106,14 @@ export class WailsCodeLensProvider implements vscode.CodeLensProvider {
   // ---------------------------------------------------------------------------
 
   private lensesForBindingsFile(document: vscode.TextDocument): vscode.CodeLens[] {
+    
     const lenses: vscode.CodeLens[] = [];
     const text = document.getText();
     const regex = /^export\s+function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/gm;
     let match: RegExpExecArray | null;
 
     while ((match = regex.exec(text)) !== null) {
+      
       const pos = document.positionAt(match.index);
       lenses.push(
         new vscode.CodeLens(new vscode.Range(pos, pos), {
@@ -86,8 +133,11 @@ export class WailsCodeLensProvider implements vscode.CodeLensProvider {
   // ---------------------------------------------------------------------------
 
   private lensesForUserCode(document: vscode.TextDocument, bindingsDir: string): vscode.CodeLens[] {
+    
     const imports = this.parseBindingsImports(document, bindingsDir);
+    
     if (imports.length === 0) {
+      
       return [];
     }
 
@@ -123,6 +173,7 @@ export class WailsCodeLensProvider implements vscode.CodeLensProvider {
               new vscode.Position(i, methodIndex + methodName.length),
             );
 
+            
             lenses.push(
               new vscode.CodeLens(range, {
                 title: `$(go-to-file) Go to Go: ${imp.localName}.${methodName}`,
@@ -177,19 +228,27 @@ export class WailsCodeLensProvider implements vscode.CodeLensProvider {
     const text = document.getText();
     const results: BindingsImport[] = [];
 
+    
+
     // Namespace: import * as Name from "...bindings..."
     const nsRegex = /import\s+\*\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)\s+from\s+['"]([^'"]*)['"]/g;
     let m: RegExpExecArray | null;
     while ((m = nsRegex.exec(text)) !== null) {
+      
       if (this.specifierContainsBindings(m[2], bindingsDir)) {
+        
         results.push({ localName: m[1], isNamespace: true, specifier: m[2] });
+      } else {
+        
       }
     }
 
     // Named: import { A, B } from "...bindings..."
     const namedRegex = /import\s+\{([^}]+)\}\s+from\s+['"]([^'"]*)['"]/g;
     while ((m = namedRegex.exec(text)) !== null) {
+      
       if (this.specifierContainsBindings(m[2], bindingsDir)) {
+        
         const names = m[1]
           .split(",")
           .map((n) =>
@@ -200,9 +259,12 @@ export class WailsCodeLensProvider implements vscode.CodeLensProvider {
               .trim(),
           )
           .filter(Boolean);
+        
         for (const name of names) {
           results.push({ localName: name, isNamespace: true, specifier: m[2] });
         }
+      } else {
+        
       }
     }
 
@@ -220,40 +282,121 @@ export class WailsCodeLensProvider implements vscode.CodeLensProvider {
   /** Check if an import specifier like `../bindings/changeme` contains the bindings dir segment. */
   private specifierContainsBindings(specifier: string, bindingsDir: string): boolean {
     const segments = specifier.split("/");
-    return segments.includes(bindingsDir);
+    
+    const result = segments.includes(bindingsDir);
+    
+    return result;
   }
 
   /**
-   * Resolve the import specifier to a URI used as the binding file for Go lookup.
+   * Resolve the import specifier to a URI for the actual binding file.
    * For a namespace import from "../bindings/changeme" and method "Greet",
-   * we want to point at the service file (e.g. greetservice.js) but since we
-   * don't know the filename, we pass the directory index file — the Go lookup
-   * will match by symbol name across all Go files anyway.
+   * we want to point at the service file (e.g. greetservice.ts), not the index file.
    */
   private resolveSpecifier(
     document: vscode.TextDocument,
     specifier: string,
-    _symbolName: string,
+    symbolName: string,
   ): vscode.Uri {
     const dir = path.dirname(document.uri.fsPath);
-    let resolved = path.resolve(dir, specifier);
+    let resolved = specifier;
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+    
+    
+    
+    // Handle path aliases like $lib/, @/, etc.
+    const aliasMatch = specifier.match(/^(\$\w+|@\w*)\//);
+    if (aliasMatch) {
+      
+      const alias = aliasMatch[1];
+      if (workspaceFolder) {
+        const aliasPath = resolvePathAlias(workspaceFolder.uri.fsPath, alias);
+        if (aliasPath) {
+          
+          resolved = specifier.replace(aliasMatch[1], aliasPath);
+        }
+      }
+    }
+    
+    // If the resolved path contains the bindings directory, use the full bindings path from Taskfile
+    if (workspaceFolder && resolved.includes('/bindings/')) {
+      const fullBindingsPath = getFullBindingsPath(workspaceFolder);
+      const bindingsMatch = resolved.match(/(.*)\/bindings\/(.*)/);
+      if (bindingsMatch) {
+        
+        // Get the part after /bindings/
+        const afterBindings = bindingsMatch[2];
+        // Reconstruct the path with the full bindings path
+        resolved = `${fullBindingsPath}/${afterBindings}`;
+        
+      }
+    }
+    
+    // Resolve path
+    let baseDir: string;
+    if (workspaceFolder && !path.isAbsolute(resolved)) {
+      baseDir = workspaceFolder.uri.fsPath;
+    } else {
+      baseDir = dir;
+    }
+    
+    let resolved_path = path.resolve(baseDir, resolved);
+    
 
-    // If it doesn't have a JS/TS extension, try common index files
-    if (!/\.(js|ts|mjs|mts)$/.test(resolved)) {
-      for (const ext of ["/index.js", "/index.ts", ".js", ".ts"]) {
-        const candidate = resolved + ext;
+    // If it doesn't have a JS/TS extension, try to resolve it
+    if (!/\.(js|ts|mjs|mts)$/.test(resolved_path)) {
+      const dirPath = resolved_path;
+      
+      // First, try to access as file with extensions
+      for (const ext of [".ts", ".js", ".d.ts"]) {
+        const candidate = resolved_path + ext;
         try {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          require("fs").accessSync(candidate);
-          resolved = candidate;
-          break;
+          fs.accessSync(candidate);
+          
+          return vscode.Uri.file(candidate);
         } catch {
           // continue
         }
       }
+      
+      // Then try as directory
+      try {
+        const files = fs.readdirSync(dirPath);
+        
+        
+        // Try to find a file that matches the method name (case-insensitive, lowercase)
+        const symbolLower = symbolName.toLowerCase();
+        for (const file of files) {
+          if (file === 'index.js' || file === 'index.ts') {
+            continue; // Skip index files
+          }
+          const fileLower = file.toLowerCase();
+          // Check if the file name contains the symbol name
+          if (fileLower.includes(symbolLower) && /\.(js|ts)$/.test(file)) {
+            const candidate = path.join(dirPath, file);
+            
+            return vscode.Uri.file(candidate);
+          }
+        }
+        
+        // Fallback: try index files
+        for (const ext of ["/index.js", "/index.ts", ".js", ".ts"]) {
+          const candidate = resolved_path + ext;
+          try {
+            fs.accessSync(candidate);
+            resolved_path = candidate;
+            
+            break;
+          } catch {
+            // continue
+          }
+        }
+      } catch (err) {
+        
+      }
     }
 
-    return vscode.Uri.file(resolved);
+    return vscode.Uri.file(resolved_path);
   }
 
   private escapeRegExp(s: string): string {
