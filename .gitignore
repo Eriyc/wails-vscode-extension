@@ -13,3 +13,6 @@ out/
 
 # VSCode extension
 *.vsix
+
+# Go
+root/
