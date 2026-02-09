@@ -105,8 +105,10 @@
         let
           pkgs = import nixpkgs { inherit system; };
           inherit (self.checks.${system}.pre-commit-check) shellHook enabledPackages;
-          customShellHook = shellHook + "";
-
+          customShellHook = shellHook + ''
+            export PATH="$HOME/go/bin:$PATH"
+            go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.70
+          '';
         in
         {
           default = pkgs.mkShell {

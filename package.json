@@ -1,0 +1,69 @@
+{
+  "name": "wails-vscode-extension",
+  "displayName": "Wails3 Bindings — Go to Go Source",
+  "version": "0.1.0",
+  "description": "Navigate from auto-generated Wails3 JS/TS bindings directly to your Go source code with Go to Definition, CodeLens, and Hover support.",
+  "categories": [
+    "Programming Languages"
+  ],
+  "main": "./dist/extension.js",
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node16",
+    "watch": "npm run build -- --watch",
+    "compile": "tsc -p ./",
+    "lint": "oxlint src/**/*.ts",
+    "pretest": "npm run compile && npm run lint",
+    "test": "vscode-test",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@types/vscode": "^1.109.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "esbuild": "^0.19.0",
+    "eslint": "^9.39.2",
+    "oxfmt": "^0.28.0",
+    "oxlint": "^1.43.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.54.0"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "wails.goToBackend",
+        "title": "Wails: Go to Backend",
+        "icon": "$(go-to-file)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "wails.goToBackend",
+        "key": "ctrl+f12",
+        "mac": "ctrl+f12",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "Wails3 Bindings",
+      "properties": {
+        "wails.bindingsPath": {
+          "type": "string",
+          "default": "bindings",
+          "description": "Name or relative path of the Wails3 bindings directory. Auto-detected from the `-d` flag in Taskfile.yml's generate:bindings task when not explicitly set."
+        }
+      }
+    }
+  },
+  "activationEvents": [
+    "onLanguage:javascript",
+    "onLanguage:javascriptreact",
+    "onLanguage:typescript",
+    "onLanguage:typescriptreact"
+  ],
+  "engines": {
+    "vscode": "^1.109.0"
+  }
+}
