@@ -1,4 +1,4 @@
-# Wails3 Bindings — Go to Go Source
+# Wails3 Definitions Provider
 
 Navigate from auto-generated Wails3 JavaScript/TypeScript bindings straight to your Go source code.
 
