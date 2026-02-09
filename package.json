@@ -6,7 +6,15 @@
   "categories": [
     "Programming Languages"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Eriyc/wails-vscode-extension"
+  },
+  "publisher": "eriyc",
   "main": "./dist/extension.js",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "vscode:prepublish": "npm run build",
     "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node16",

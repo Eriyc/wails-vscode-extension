@@ -16,3 +16,4 @@ flake.lock
 .envrc
 examples/**
 wails3-vscode-extension/**
+.direnv/**
