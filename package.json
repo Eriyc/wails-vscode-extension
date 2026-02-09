@@ -1,7 +1,8 @@
 {
   "name": "wails-vscode-extension",
   "displayName": "Wails3 Definitions Provider",
-  "version": "0.1.0",
+  "icon": "wails.png",
+  "version": "0.1.1",
   "description": "Navigate from auto-generated Wails3 JS/TS bindings directly to your Go source code with Go to Definition, CodeLens, and Hover support.",
   "categories": [
     "Programming Languages"
