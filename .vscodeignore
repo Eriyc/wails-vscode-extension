@@ -1,0 +1,11 @@
+.vscode/**
+.git
+.gitignore
+.gitlint
+**/node_modules
+**/.DS_Store
+src/**
+tsconfig.json
+flake.nix
+flake.lock
+.envrc

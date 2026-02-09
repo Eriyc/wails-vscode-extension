@@ -1,0 +1,43 @@
+{
+  "name": "wails-vscode-extension",
+  "displayName": "Wails3 Bindings Definition Provider",
+  "description": "VSCode extension that redirects Wails3 JS glue file definitions to Go source files",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:javascript",
+    "onLanguage:typescript",
+    "onLanguage:javascriptreact",
+    "onLanguage:typescriptreact"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Wails3 Bindings",
+      "properties": {
+        "wails.bindingsPath": {
+          "type": "string",
+          "default": "bindings",
+          "description": "Path to the Wails3 bindings directory relative to workspace root"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node16",
+    "watch": "npm run build -- --watch",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.19.0",
+    "typescript": "^5.3.0"
+  }
+}
