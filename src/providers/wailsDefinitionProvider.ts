@@ -158,9 +158,9 @@ export class WailsDefinitionProvider implements vscode.DefinitionProvider {
 
       // Look for function definition
       // Patterns: func (receiver) FunctionName(...) or func FunctionName(...)
+      // Note: Go is case-sensitive, so we match exact case
       const functionRegex = new RegExp(
-        `^func\\s+(\\([^)]+\\)\\s+)?${functionName}\\s*\\(`,
-        'i'
+        `^func\\s+(\\([^)]+\\)\\s+)?${functionName}\\s*\\(`
       );
 
       for (let i = 0; i < lines.length; i++) {
