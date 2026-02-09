@@ -1,7 +1,14 @@
 # Wails3 Definitions Provider
 
+[![Version](https://img.shields.io/visual-studio-marketplace/v/eriyc.wails-vscode-extension?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=eriyc.wails-vscode-extension)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/eriyc.wails-vscode-extension?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=eriyc.wails-vscode-extension)
+[![Rating](https://img.shields.io/visual-studio-marketplace/r/eriyc.wails-vscode-extension?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=eriyc.wails-vscode-extension)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/Eriyc/wails-vscode-extension/publish.yml?style=flat-square)](https://github.com/Eriyc/wails-vscode-extension/actions)
+[![License](https://img.shields.io/github/license/Eriyc/wails-vscode-extension?style=flat-square)](LICENSE)
+
 Navigate from auto-generated Wails3 JavaScript/TypeScript bindings straight to your Go source code.
 
+![Image](example.png)
 ## Features
 
 ### Go to Definition
